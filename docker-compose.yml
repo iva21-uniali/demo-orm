@@ -1,0 +1,9 @@
+services:
+  demo-orm:
+    build: .
+    container_name: demo-orm-seguridad
+    ports:
+      - "3000:3000"
+    tty: true
+    environment:
+      - FORCE_COLOR=1
