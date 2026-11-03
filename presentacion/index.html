@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ORMs e inyección SQL en TypeORM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  /* Deck académico 16:9 (curso SABD). Un mundo visual claro; terminal/código oscuros.
+     Escenario fijo 1280x720 escalado al viewport; una diapositiva visible a la vez. */
+  :root {
+    --bg: #eef1f7; --card: #ffffff; --ink: #0f172a; --muted: #64748b; --faint: #94a3b8;
+    --accent: #2563eb; --accent-soft: #eff6ff; --line: #e2e8f0;
+    --vuln: #c2410c; --vuln-bg: #fff7ed; --vuln-line: #fed7aa;
+    --safe: #047857; --safe-bg: #ecfdf5; --safe-line: #a7f3d0;
+    --danger: #dc2626; --danger-bg: #fef2f2; --term-bg: #0b1222; --term-ink: #cbd5e1;
+    --font-display: "Sora", system-ui, sans-serif;
+    --font-body: "IBM Plex Sans", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); font-family: var(--font-body); color: var(--ink); overflow: hidden; -webkit-font-smoothing: antialiased; }
+
+  #viewport { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #stage { width: 1280px; height: 720px; position: relative; transform-origin: center center; }
+  .slide { position: absolute; inset: 0; background: var(--card); border-radius: 18px; box-shadow: 0 24px 60px rgba(15,23,42,.18); padding: 50px 60px; display: none; flex-direction: column; overflow: hidden; }
+  .slide.active { display: flex; }
+  @media (prefers-reduced-motion: no-preference) {
+    .slide.active { animation: fade .3s ease; }
+    @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  }
+
+  .eyebrow { font-family: var(--font-mono); font-size: 13.5px; letter-spacing: 1px; text-transform: uppercase; color: var(--accent); font-weight: 500; margin: 0 0 12px; }
+  .eyebrow.v { color: var(--vuln); } .eyebrow.s { color: var(--safe); }
+  h1 { font-family: var(--font-display); font-weight: 700; font-size: 60px; line-height: 1.04; margin: 0; letter-spacing: -1px; text-wrap: balance; }
+  h2 { font-family: var(--font-display); font-weight: 700; font-size: 37px; line-height: 1.1; margin: 0; letter-spacing: -.6px; text-wrap: balance; }
+  h2 code { font-size: .82em; background: #f1f5f9; border: 1px solid var(--line); border-radius: 7px; padding: 1px 9px; }
+  .sub { font-size: 19px; color: var(--muted); margin: 14px 0 0; line-height: 1.5; max-width: 64ch; }
+  .slide-head { margin-bottom: 24px; }
+  p { margin: 0; }
+
+  .tag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: 13px; font-weight: 500; padding: 5px 11px; border-radius: 999px; border: 1px solid; }
+  .tag .d { width: 7px; height: 7px; border-radius: 50%; }
+  .tag.vuln { background: var(--vuln-bg); color: var(--vuln); border-color: var(--vuln-line); } .tag.vuln .d { background: #f59e0b; }
+  .tag.safe { background: var(--safe-bg); color: var(--safe); border-color: var(--safe-line); } .tag.safe .d { background: #10b981; }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; flex: 1; min-height: 0; }
+  .cols-60-40 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 22px; flex: 1; min-height: 0; }
+  .cols-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; flex: 1; min-height: 0; align-content: center; }
+  .stack { display: flex; flex-direction: column; gap: 14px; }
+
+  .box { border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; background: var(--card); }
+  .box h3 { margin: 0 0 10px; font-family: var(--font-display); font-size: 18px; font-weight: 600; }
+  .box.vuln { background: var(--vuln-bg); border-color: var(--vuln-line); }
+  .box.safe { background: var(--safe-bg); border-color: var(--safe-line); }
+  .box.accent { background: var(--accent-soft); border-color: #dbeafe; }
+
+  ul.clean { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 11px; }
+  ul.clean li { position: relative; padding-left: 26px; font-size: 17px; line-height: 1.45; color: #1e293b; }
+  ul.clean li::before { content: ""; position: absolute; left: 3px; top: 8px; width: 9px; height: 9px; border-radius: 3px; background: var(--accent); }
+  ul.clean.vuln li::before { background: var(--vuln); } ul.clean.safe li::before { background: var(--safe); }
+  .lead { font-size: 20px; line-height: 1.5; color: #1e293b; } .lead b { color: var(--ink); }
+
+  code, pre { font-family: var(--font-mono); }
+  pre.code { background: #0f172a; color: #e2e8f0; border-radius: 12px; padding: 16px 18px; font-size: 14.5px; line-height: 1.55; margin: 0; overflow: auto; }
+  pre.code.lg { font-size: 16.5px; line-height: 1.7; padding: 22px 24px; }
+  pre.code .c { color: #64748b; } pre.code .k { color: #93c5fd; } pre.code .s { color: #86efac; } pre.code .f { color: #fca5a5; } pre.code .m { color: #fcd34d; }
+  .code-hero { background: #0b1222; border-radius: 16px; flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; padding: 30px 38px; }
+  .code-hero pre { background: transparent; padding: 0; }
+  .payload { font-family: var(--font-mono); font-size: 16px; background: #1e293b; color: #fde68a; padding: 11px 14px; border-radius: 10px; word-break: break-all; line-height: 1.5; }
+  .glosa { margin-top: 11px; display: flex; flex-direction: column; gap: 7px; }
+  .glosa .g { font-size: 14px; line-height: 1.4; color: #334155; padding-left: 18px; position: relative; }
+  .glosa .g::before { content: "↳"; position: absolute; left: 0; color: var(--accent); font-weight: 600; }
+  .glosa .g code { background: #0f172a; color: #e2e8f0; border-radius: 4px; padding: 1px 6px; font-size: 12px; }
+  .box.vuln .glosa .g code { background: #1e293b; }
+
+  .terminal { background: var(--term-bg); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; border: 1px solid #1e293b; }
+  .terminal .bar { background: #111a2e; padding: 9px 14px; display: flex; align-items: center; gap: 7px; border-bottom: 1px solid #1e293b; }
+  .terminal .bar i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+  .terminal .bar .t { margin-left: 10px; font-family: var(--font-mono); font-size: 12px; color: #64748b; }
+  .terminal pre { margin: 0; padding: 15px 18px; color: var(--term-ink); font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono); }
+  .term-red { color: #fca5a5; } .term-yellow { color: #fde68a; } .term-green { color: #86efac; } .term-blue { color: #7dd3fc; } .term-dim { color: #64748b; }
+  .inj { background: rgba(248,113,113,.22); color: #fecaca; border-radius: 3px; padding: 0 2px; font-weight: 500; }
+
+  .app { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #fff; box-shadow: 0 1px 2px rgba(15,23,42,.05); }
+  .app-nav { height: 46px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; border-bottom: 1px solid var(--line); background: #fff; }
+  .app-brand { display: flex; align-items: center; gap: 8px; } .app-brand .ic { width: 25px; height: 25px; border-radius: 7px; background: var(--accent-soft); border: 1px solid #dbeafe; display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 13px; } .app-brand b { font-size: 12px; }
+  .app-toggle { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; padding: 4px 9px; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid; }
+  .app-toggle .d { width: 6px; height: 6px; border-radius: 50%; }
+  .app-toggle.v { background: var(--vuln-bg); color: var(--vuln); border-color: var(--vuln-line); } .app-toggle.v .d { background: #f59e0b; }
+  .app-toggle.s { background: var(--safe-bg); color: var(--safe); border-color: var(--safe-line); } .app-toggle.s .d { background: #10b981; }
+  .app-toolbar { padding: 9px 13px; background: #f8fafc; border-bottom: 1px solid var(--line); display: flex; gap: 8px; align-items: center; }
+  .app-input { flex: 1; background: #fff; border: 1px solid #cbd5e1; border-radius: 7px; padding: 6px 9px; font-family: var(--font-mono); font-size: 12px; color: #0f172a; }
+  .app-input.attack { color: #b91c1c; border-color: #fca5a5; }
+  .app-btn { background: var(--accent); color: #fff; border-radius: 7px; padding: 6px 12px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  table.app-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.app-tbl th { text-align: left; font-size: 9.5px; letter-spacing: .4px; text-transform: uppercase; color: var(--muted); font-weight: 600; padding: 8px 13px; border-bottom: 1px solid var(--line); }
+  table.app-tbl td { padding: 9px 13px; border-bottom: 1px solid #f1f5f9; color: #1e293b; }
+  table.app-tbl tr:last-child td { border-bottom: 0; } table.app-tbl tr.admin td { background: #fff1f2; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 600; }
+  .pill.est { background: #e0f2fe; color: #0369a1; } .pill.doc { background: #ede9fe; color: #6d28d9; } .pill.adm { background: #fee2e2; color: #b91c1c; }
+  .app-toast { margin: 11px 13px; padding: 9px 12px; border-radius: 8px; font-size: 12px; }
+  .app-toast.err { background: var(--danger-bg); border: 1px solid #fecaca; color: #991b1b; font-family: var(--font-mono); }
+
+  .caption { font-size: 14.5px; color: var(--muted); margin-top: 10px; line-height: 1.45; } .caption b { color: var(--ink); }
+
+  .steps { display: flex; flex-direction: column; gap: 12px; }
+  .step { display: flex; gap: 13px; align-items: flex-start; }
+  .step .n { flex: 0 0 29px; height: 29px; border-radius: 50%; background: var(--accent); color: #fff; font-family: var(--font-display); font-weight: 600; font-size: 14px; display: flex; align-items: center; justify-content: center; }
+  .step.vuln .n { background: var(--vuln); }
+  .step .tx { font-size: 17px; line-height: 1.4; color: #1e293b; padding-top: 3px; } .step .tx b { color: var(--ink); }
+
+  .row2 { display: flex; flex-direction: column; gap: 10px; }
+  .io { display: grid; grid-template-columns: 150px 1fr; gap: 12px; align-items: center; }
+  .io .in { font-family: var(--font-mono); font-size: 13.5px; padding: 8px 10px; border-radius: 8px; text-align: center; }
+  .io .in.ok { background: #e0f2fe; color: #075985; } .io .in.bad { background: #fee2e2; color: #b91c1c; }
+  .io .out { font-size: 15.5px; color: #1e293b; } .io .out b { color: var(--danger); }
+
+  .cover { justify-content: center; background: linear-gradient(160deg, #0b1222 0%, #15213b 55%, #1e293b 100%); color: #fff; }
+  .cover .eyebrow { color: #fbbf24; }
+  .cover h1 { font-size: 62px; color: #fff; max-width: 20ch; }
+  .cover .sub { color: #cbd5e1; font-size: 21px; max-width: 54ch; }
+  .cover .rule { width: 64px; height: 4px; background: #ef4444; border-radius: 3px; margin-top: 30px; }
+  .cover .foot { position: absolute; left: 60px; right: 60px; bottom: 40px; display: flex; justify-content: space-between; align-items: end; color: #94a3b8; font-size: 14px; }
+  .cover .foot .stack-line { font-family: var(--font-mono); font-size: 12.5px; color: #64748b; }
+  .cover .author { color: #e2e8f0; font-size: 18px; font-weight: 600; }
+
+  .cve-decode { display: flex; gap: 10px; align-items: stretch; margin: 2px 0; }
+  .cve-decode .part { text-align: center; }
+  .cve-decode .val { font-family: var(--font-mono); font-size: 30px; font-weight: 500; color: var(--ink); background: #f1f5f9; border: 1px solid var(--line); border-radius: 10px; padding: 8px 15px; }
+  .cve-decode .val.hl { background: var(--accent-soft); border-color: #bfdbfe; color: var(--accent); }
+  .cve-decode .lbl { font-size: 12px; color: var(--muted); margin-top: 7px; line-height: 1.3; }
+  .cve-card .id { font-family: var(--font-mono); font-size: 14.5px; color: var(--vuln); font-weight: 500; }
+  .cve-card .what { font-family: var(--font-display); font-size: 20px; font-weight: 600; margin: 6px 0 8px; line-height: 1.2; }
+  .cve-card .eff { font-size: 14.5px; color: var(--muted); line-height: 1.45; }
+  .cve-card .sev { display: inline-block; margin-top: 12px; font-family: var(--font-mono); font-size: 11.5px; background: var(--danger-bg); color: var(--danger); border: 1px solid #fecaca; border-radius: 6px; padding: 3px 9px; }
+
+  .arranque { background: var(--term-bg); border-radius: 12px; padding: 16px 18px; }
+  .arranque .lbl { font-family: var(--font-mono); font-size: 11px; letter-spacing: .5px; text-transform: uppercase; color: #7dd3fc; margin-bottom: 10px; }
+  .arranque pre { margin: 0; font-family: var(--font-mono); font-size: 13.5px; line-height: 1.7; color: #e2e8f0; } .arranque .c { color: #64748b; } .arranque .p { color: #86efac; }
+
+  .num-card { border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+  .num-card .ic { width: 42px; height: 42px; border-radius: 11px; display: flex; align-items: center; justify-content: center; font-size: 20px; margin-bottom: 16px; }
+  .num-card h3 { font-family: var(--font-display); font-size: 19px; font-weight: 600; margin: 0 0 8px; }
+  .num-card p { font-size: 15px; color: var(--muted); line-height: 1.45; }
+  .num-card code { background: #f1f5f9; border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; font-size: 13px; }
+
+  table.matrix { width: 100%; border-collapse: collapse; font-size: 16px; }
+  table.matrix th { text-align: left; padding: 11px 16px; font-size: 12px; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); border-bottom: 2px solid var(--line); }
+  table.matrix td { padding: 12px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.matrix tr:last-child td { border-bottom: 0; }
+  table.matrix .threat { font-weight: 600; color: var(--vuln); }
+  table.matrix code { background: #f1f5f9; border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; font-size: 13.5px; }
+
+  .closing { justify-content: center; align-items: center; text-align: center; background: linear-gradient(160deg, #0b1222, #1e293b); color: #fff; }
+  .closing .eyebrow { color: #7dd3fc; }
+  .closing h2 { font-size: 46px; max-width: 22ch; color: #fff; margin: 0 auto; }
+  .closing .q { margin-top: 22px; font-size: 20px; color: #cbd5e1; max-width: 60ch; line-height: 1.5; }
+  .closing .q code { color: #fcd34d; font-family: var(--font-mono); }
+  .closing .authors { margin-top: 30px; font-family: var(--font-mono); font-size: 14px; color: #64748b; }
+
+  #progress { position: fixed; top: 0; left: 0; height: 4px; background: var(--accent); width: 0; transition: width .25s ease; z-index: 20; }
+  #nav-zones { position: fixed; inset: 0; display: flex; z-index: 5; } #nav-zones .z { flex: 1; cursor: pointer; } #nav-zones .z.left { flex: 0 0 22%; }
+  .control { position: fixed; z-index: 20; }
+  #hud { bottom: 16px; right: 20px; display: flex; align-items: center; gap: 14px; font-family: var(--font-mono); font-size: 13px; color: var(--muted); background: rgba(255,255,255,.85); backdrop-filter: blur(6px); padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line); }
+  #hud button { border: 0; background: transparent; cursor: pointer; color: var(--muted); font-size: 15px; padding: 2px 4px; border-radius: 6px; line-height: 1; }
+  #hud button:hover { color: var(--accent); background: var(--accent-soft); } #hud #counter { min-width: 46px; text-align: center; }
+  #dots { bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; gap: 7px; }
+  #dots .dot { width: 8px; height: 8px; border-radius: 50%; background: #cbd5e1; border: 0; cursor: pointer; padding: 0; }
+  #dots .dot.on { background: var(--accent); transform: scale(1.25); }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .hint-key { position: fixed; bottom: 16px; left: 20px; z-index: 20; font-family: var(--font-mono); font-size: 12px; color: var(--faint); }
+</style>
+</head>
+<body>
+
+<div id="progress"></div>
+
+<div id="viewport">
+  <div id="stage">
+
+    <!-- 1 · PORTADA -->
+    <section class="slide cover active">
+      <p class="eyebrow">Seguridad en Aplicaciones y Bases de Datos · SABD · CVE-2026-76848 / CVE-2025-60542</p>
+      <h1>El mito de que los ORMs impiden la inyección SQL</h1>
+      <p class="sub">Explotación en vivo de dos vulnerabilidades reales de TypeORM y su defensa con Zod y lista blanca.</p>
+      <div class="rule"></div>
+      <div class="foot">
+        <div class="author">Andrea Sarmiento Paredes · Iñaki Vidal Alonso</div>
+        <div class="stack-line">Node.js · Express · TypeScript · TypeORM · Zod</div>
+      </div>
+    </section>
+
+    <!-- 2 · QUÉ ES SQLi -->
+    <section class="slide">
+      <div class="slide-head">
+        <p class="eyebrow">01 · Conceptos previos</p>
+        <h2>¿Qué es una inyección SQL?</h2>
+      </div>
+      <div class="box accent" style="margin-bottom:20px">
+        <p class="lead" style="margin:0">La app habla con su base de datos mediante <b>consultas SQL</b>. Hay <b>inyección</b> cuando lo que escribe el usuario deja de tratarse como un dato y se ejecuta <b>como una orden</b>. Así, un atacante puede leer, modificar o borrar datos que no le corresponden.</p>
+      </div>
+      <div class="cols">
+        <div class="box">
+          <h3>Un buscador de usuarios por nombre</h3>
+          <div class="row2">
+            <div class="io"><span class="in ok">alice</span><span class="out">La app busca a <b style="color:#075985">alice</b>. Correcto.</span></div>
+            <div class="io"><span class="in bad">' OR '1'='1</span><span class="out">El filtro se rompe y devuelve a <b>TODOS</b> los usuarios.</span></div>
+          </div>
+        </div>
+        <div class="box safe">
+          <h3 style="color:var(--safe)">La defensa clásica: parametrizar</h3>
+          <pre class="code"><span class="k">SELECT</span> * <span class="k">FROM</span> user <span class="k">WHERE</span> username = <span class="f">?</span>
+<span class="c">// el valor viaja aparte, nunca como código</span></pre>
+          <p class="caption" style="margin-top:12px">Funciona para <b>valores</b> (nombres, números), pero <b>no</b> para el nombre de una columna ni para la <b>forma</b> del dato. Esos dos huecos son los que explotan los CVE de hoy.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3 · ORM Y MITO -->
+    <section class="slide">
+      <div class="slide-head">
+        <p class="eyebrow">01 · Conceptos previos</p>
+        <h2>¿Qué es un ORM y por qué confiamos en él?</h2>
+        <p class="sub">Un ORM (Object-Relational Mapping) es una librería que traduce los objetos de tu código a SQL, para no escribir las consultas a mano.</p>
+      </div>
+      <div class="cols">
+        <div class="box">
+          <h3 style="color:var(--safe)">La falsa sensación de seguridad</h3>
+          <pre class="code">repo.<span class="k">findBy</span>({ username: <span class="s">"alice"</span> })
+<span class="c">// TypeORM lo convierte en SQL seguro:</span>
+<span class="k">WHERE</span> "username" = <span class="f">?</span></pre>
+          <div class="glosa">
+            <div class="g"><code>findBy({...})</code> pides datos con un objeto; no escribes SQL a mano.</div>
+            <div class="g"><code>= ?</code> el valor «alice» viaja aparte (parametrizado): no puede ejecutarse como código.</div>
+          </div>
+          <p class="caption" style="margin-top:11px">El ORM solo parametriza el caso simple → el programador <b>relaja los controles</b>.</p>
+        </div>
+        <div class="box vuln">
+          <h3 style="color:var(--vuln)">Pero el mito se rompe</h3>
+          <pre class="code">qb.<span class="k">distinctOn</span>([req.body.distinctOn]);
+await repo.<span class="k">save</span>(req.body);</pre>
+          <div class="glosa">
+            <div class="g"><code>distinctOn([req.body…])</code> mete el texto del usuario como nombre de columna, <b>sin validar</b> → CVE-2026-76848.</div>
+            <div class="g"><code>save(req.body)</code> guarda el cuerpo entero de la petición tal cual, <b>sin comprobar tipos</b> → CVE-2025-60542.</div>
+          </div>
+          <ul class="clean vuln" style="margin-top:12px">
+            <li>Va a un sitio que <b>no admite</b> <code>?</code> (un nombre de columna).</li>
+            <li>El dato llega con una <b>forma inesperada</b> (un objeto donde esperaba texto).</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- LABORATORIO -->
+    <section class="slide">
+      <div class="slide-head">
+        <p class="eyebrow">02 · Entorno de pruebas</p>
+        <h2>El laboratorio: «Campus Digital» en localhost</h2>
+        <p class="sub">Una intranet universitaria: a la izquierda editas tu perfil; a la derecha ves el directorio de miembros.</p>
+      </div>
+      <div class="cols-60-40">
+        <div class="app">
+          <div class="app-nav"><div class="app-brand"><span class="ic">🎓</span><b>Universidad Politécnica</b></div><span class="app-toggle v"><span class="d"></span>API v1.0</span></div>
+          <table class="app-tbl">
+            <thead><tr><th>ID</th><th>Usuario</th><th>Rol</th><th>Departamento</th></tr></thead>
+            <tbody>
+              <tr><td>#1</td><td><b>@alice</b></td><td><span class="pill est">estudiante</span></td><td>Ing. Informática</td></tr>
+              <tr><td>#2</td><td><b>@bob</b></td><td><span class="pill est">estudiante</span></td><td>Ciberseguridad</td></tr>
+              <tr><td>#3</td><td><b>@elena</b></td><td><span class="pill doc">docente</span></td><td>Sistemas y Redes</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="stack">
+          <div class="arranque">
+            <div class="lbl">Arranque en 1 minuto</div>
+            <pre>$ npm install
+$ npm start
+<span class="c"># Izquierda: http://localhost:3000</span>
+<span class="c"># Derecha:   logs SQL en tiempo real</span></pre>
+          </div>
+          <div class="box" style="padding:16px 18px">
+            <p style="font-size:15.5px;line-height:1.5;margin:0"><b>Objetivos:</b> revelar la cuenta oculta <code style="font-size:13px">@admin_rectorado</code> y ascender a <code style="font-size:13px">@alice</code> a admin. Cada ataque se prueba en 3 pasos: uso normal → explotación (v1.0) → defensa (v2.0).</p>
+          </div>
+          <p class="caption" style="margin:0">Botón <span class="tag vuln" style="font-size:10.5px;padding:2px 7px"><span class="d"></span>v1.0</span> vulnerable / <span class="tag safe" style="font-size:10.5px;padding:2px 7px"><span class="d"></span>v2.0</span> protegido.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6 · VECTOR 1 cómo funciona -->
+    <section class="slide">
+      <div class="slide-head">
+        <p class="eyebrow v">03 · Vector 1 · CVE-2026-76848</p>
+        <h2>El buscador que ejecuta SQL ajeno — <code>distinctOn()</code></h2>
+        <p class="sub"><code>distinctOn()</code> agrupa los resultados por una columna para no repetir filas.</p>
+      </div>
+      <div class="cols">
+        <div class="stack">
+          <div class="box">
+            <p class="lead" style="margin:0 0 10px">El nombre de una columna <b>no admite</b> <code>?</code>, así que TypeORM lo <b>pega como texto</b>:</p>
+            <pre class="code" style="font-size:13px"><span class="k">const</span> qb = repo.<span class="k">createQueryBuilder</span>(<span class="s">"user"</span>)
+  .<span class="k">where</span>(<span class="s">"user.visibleEnDirectorio = 1"</span>);
+
+<span class="k">if</span> (distinctOn)
+  qb.<span class="k">distinctOn</span>([distinctOn]);  <span class="m">// ❌ sin validar</span></pre>
+            <div class="glosa">
+              <div class="g"><code>.where(...)</code> deja ver solo las cuentas visibles del directorio.</div>
+              <div class="g"><code>distinctOn([distinctOn])</code> pega el texto del usuario dentro del SELECT sin comprobarlo.</div>
+            </div>
+          </div>
+          <div class="box" style="padding:16px 18px"><p class="caption" style="margin:0">Lo que escribe el atacante en el buscador:</p><div class="payload" style="margin-top:8px">1), * FROM user WHERE role='admin' --</div></div>
+        </div>
+        <div class="box vuln">
+          <h3 style="color:var(--vuln)">Qué hace ese texto, pieza a pieza</h3>
+          <div class="steps">
+            <div class="step vuln"><span class="n">1</span><span class="tx"><code>1)</code> cierra el paréntesis que TypeORM dejó abierto.</span></div>
+            <div class="step vuln"><span class="n">2</span><span class="tx"><code>, * FROM user WHERE role='admin'</code> pide todos los administradores.</span></div>
+            <div class="step vuln"><span class="n">3</span><span class="tx"><code>--</code> comenta (anula) el filtro que ocultaba la cuenta.</span></div>
+          </div>
+          <p class="caption" style="margin-top:14px"><b>Dato técnico:</b> en TypeORM real el fallo está en <code>SelectQueryBuilder</code> (PostgreSQL): interpola la columna sin lista blanca.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7 · VECTOR 1 en vivo -->
+    <section class="slide">
+      <div class="slide-head">
+        <p class="eyebrow v">03 · Vector 1 · demo en vivo</p>
+        <h2>La cuenta oculta aparece</h2>
+        <p class="sub">Escribimos el payload en el buscador (modo v1.0) y pulsamos «Filtrar».</p>
+      </div>
+      <div class="cols">
+        <div class="app" style="align-self:start">
+          <div class="app-nav"><div class="app-brand"><span class="ic">🎓</span><b>Directorio</b></div><span class="app-toggle v"><span class="d"></span>API v1.0</span></div>
+          <div class="app-toolbar"><span class="app-input attack">1), * FROM user WHERE role='admin' --</span><span class="app-btn">Filtrar</span></div>
+          <table class="app-tbl">
+            <thead><tr><th>ID</th><th>Usuario</th><th>Rol</th><th>Departamento</th></tr></thead>
+            <tbody><tr class="admin"><td>#4</td><td><b>@admin_rectorado</b></td><td><span class="pill adm">admin</span></td><td>Rectorado Central</td></tr></tbody>
+          </table>
+        </div>
+        <div class="terminal" style="align-self:start">
+          <div class="bar"><i style="background:#ff5f56"></i><i style="background:#ffbd2e"></i><i style="background:#27c93f"></i><span class="t">SQL que ejecuta TypeORM</span></div>
+          <pre>SELECT DISTINCT (<span class="inj">1), * FROM user WHERE role='admin' --</span>),
+  "user"."id", "user"."username", ...
+FROM "user" <span class="term-dim">WHERE "user"."visibleEnDirectorio" = 1</span>
+<span class="term-green">→ devuelve: @admin_rectorado (role = admin)</span></pre>
+        </div>
+      </div>
+      <p class="caption">Con un valor normal (<code>department</code>) saldrían los 3 usuarios visibles; con el payload, la consulta <b>anula el filtro</b> <code>visibleEnDirectorio = 1</code> y aparece la cuenta oculta.</p>
+    </section>
+
+    <!-- 8 · VECTOR 1 solución -->
+    <section class="slide">
+      <div class="slide-head">
+        <p class="eyebrow s">04 · Vector 1 · solución (API v2.0)</p>
+        <h2>Mitigación con lista blanca de columnas</h2>
+      </div>
+      <div class="cols-60-40">
+        <div class="box safe">
+          <h3 style="color:var(--safe)">Validar con Zod ANTES de TypeORM</h3>
+          <pre class="code" style="font-size:12.5px"><span class="c">// ANTES ❌ — cualquier texto entra</span>
+qb.<span class="k">distinctOn</span>([distinctOn]);
+
+<span class="c">// DESPUÉS ✅ — lista blanca de columnas</span>
+<span class="k">const</span> ALLOWLIST = { id: <span class="s">"user.id"</span>,
+  username: <span class="s">"user.username"</span>, department: <span class="s">"user.department"</span> };
+
+<span class="k">const</span> Dto = z.<span class="k">object</span>({
+  distinctOn: z.<span class="k">enum</span>([<span class="s">"id"</span>, <span class="s">"username"</span>, <span class="s">"department"</span>]),
+}).<span class="k">strict</span>();
+
+<span class="k">const</span> r = Dto.<span class="k">safeParse</span>(req.body);
+<span class="k">if</span> (!r.success) <span class="k">return</span> res.<span class="k">status</span>(<span class="s">400</span>);   <span class="c">// corta aquí</span>
+qb.<span class="k">distinctOn</span>([ ALLOWLIST[r.data.distinctOn] ]);</pre>
+        </div>
+        <div class="stack">
+          <div class="app" style="align-self:start">
+            <div class="app-nav"><div class="app-brand"><span class="ic">🎓</span><b>Directorio</b></div><span class="app-toggle s"><span class="d"></span>API v2.0</span></div>
+            <div class="app-toolbar"><span class="app-input attack" style="font-size:11px">1), * FROM user WHERE role='admin' --</span><span class="app-btn">Filtrar</span></div>
+            <div class="app-toast err">HTTP 400 — Bad Request</div>
+          </div>
+          <p class="caption"><b>Mismo ataque, bloqueado:</b> 400 y no se ejecuta ninguna consulta.</p>
+          <ul class="clean safe" style="font-size:15px">
+            <li>Zod valida el valor contra la lista blanca.</li>
+            <li><code>safeParse</code> corta con 400 si no encaja.</li>
+            <li>Solo la columna traducida llega a <code>distinctOn</code>.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9 · VECTOR 2 cómo funciona -->
+    <section class="slide">
+      <div class="slide-head">
+        <p class="eyebrow v">05 · Vector 2 · CVE-2025-60542</p>
+        <h2>El formulario que toca campos prohibidos — <code>save()</code></h2>
+        <p class="sub"><code>save()</code> guarda en la base de datos los campos del objeto que recibe.</p>
+      </div>
+      <div class="cols">
+        <div class="stack">
+          <div class="box">
+            <p class="lead" style="margin:0 0 10px">El campo espera un <b>texto</b>; si envías un <b>objeto</b>, TypeORM lo convierte en varios cambios:</p>
+            <pre class="code" style="font-size:13px">app.<span class="k">post</span>(<span class="s">"/api/vulnerable/perfil"</span>, <span class="k">async</span> (req, res) => {
+  <span class="k">const</span> repo = <span class="k">getRepository</span>(User);
+  <span class="k">await</span> repo.<span class="k">save</span>(req.body);   <span class="m">// ❌</span>
+});</pre>
+            <div class="glosa">
+              <div class="g"><code>req.body</code> es lo que mandó el usuario (aquí, el formulario de perfil).</div>
+              <div class="g"><code>save(req.body)</code> guarda <b>todas</b> las claves que lleguen, sin comprobar su tipo.</div>
+            </div>
+          </div>
+          <div class="box" style="padding:16px 18px"><p class="caption" style="margin:0">Lo que escribe el atacante en «departamento»:</p><div class="payload" style="margin-top:8px">{"department":"Robótica","role":"admin"}</div></div>
+        </div>
+        <div class="box vuln">
+          <h3 style="color:var(--vuln)">Qué pasa por debajo</h3>
+          <div class="steps">
+            <div class="step vuln"><span class="n">1</span><span class="tx">Esperaba un texto para <code>department</code>.</span></div>
+            <div class="step vuln"><span class="n">2</span><span class="tx">Recibe un objeto con una 2ª clave: <code>role</code>.</span></div>
+            <div class="step vuln"><span class="n">3</span><span class="tx">TypeORM también escribe <code>role = 'admin'</code>, que no debía tocar.</span></div>
+          </div>
+          <p class="caption" style="margin-top:14px"><b>Dato técnico:</b> afecta a TypeORM &lt; 0.3.26 con MySQL — la librería <code>sqlstring</code> (<code>stringifyObjects:false</code>) expande el objeto en columnas.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 10 · VECTOR 2 en vivo -->
+    <section class="slide">
+      <div class="slide-head">
+        <p class="eyebrow v">05 · Vector 2 · demo en vivo</p>
+        <h2>Alice se convierte en administradora</h2>
+        <p class="sub">Enviamos el objeto desde «Mi perfil» (modo v1.0) y pulsamos «Guardar».</p>
+      </div>
+      <div class="cols">
+        <div class="app" style="align-self:start">
+          <div class="app-nav"><div class="app-brand"><span class="ic">🎓</span><b>Mi Perfil → Directorio</b></div><span class="app-toggle v"><span class="d"></span>API v1.0</span></div>
+          <div class="app-toolbar"><span class="app-input attack">{"department":"Robótica","role":"admin"}</span><span class="app-btn">Guardar</span></div>
+          <table class="app-tbl">
+            <thead><tr><th>ID</th><th>Usuario</th><th>Rol</th><th>Departamento</th></tr></thead>
+            <tbody>
+              <tr class="admin"><td>#1</td><td><b>@alice</b></td><td><span class="pill adm">admin</span></td><td>Robótica</td></tr>
+              <tr><td>#2</td><td><b>@bob</b></td><td><span class="pill est">estudiante</span></td><td>Ciberseguridad</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="terminal" style="align-self:start">
+          <div class="bar"><i style="background:#ff5f56"></i><i style="background:#ffbd2e"></i><i style="background:#27c93f"></i><span class="t">SQL que ejecuta TypeORM</span></div>
+          <pre>UPDATE user SET department = 'Robótica'<span class="inj">, role = 'admin'</span>
+WHERE id = 1
+<span class="term-green">→ @alice ahora tiene role = admin</span>
+
+<span class="term-dim">El objeto se expandió en DOS asignaciones:
+se coló la columna role.</span></pre>
+        </div>
+      </div>
+      <p class="caption">Con un texto normal (<code>"Robótica"</code>) solo cambiaría el departamento; con el objeto, el formulario acaba cambiando también el <b>rol</b>, que nunca debió tocarse.</p>
+    </section>
+
+    <!-- 11 · VECTOR 2 solución -->
+    <section class="slide">
+      <div class="slide-head">
+        <p class="eyebrow s">06 · Vector 2 · solución (API v2.0)</p>
+        <h2>Mitigación exigiendo el tipo correcto</h2>
+      </div>
+      <div class="cols-60-40">
+        <div class="box safe">
+          <h3 style="color:var(--safe)">Zod rechaza lo que no es texto</h3>
+          <pre class="code" style="font-size:12.5px"><span class="c">// ANTES ❌</span>
+<span class="k">await</span> repo.<span class="k">save</span>(req.body);
+
+<span class="c">// DESPUÉS ✅</span>
+<span class="k">const</span> Dto = z.<span class="k">object</span>({
+  department: z.<span class="k">string</span>().<span class="k">trim</span>().<span class="k">min</span>(<span class="s">2</span>).<span class="k">max</span>(<span class="s">60</span>),
+}).<span class="k">strict</span>();   <span class="c">// objeto o clave extra → rechazado</span>
+
+<span class="k">const</span> r = Dto.<span class="k">safeParse</span>(req.body);
+<span class="k">if</span> (!r.success) <span class="k">return</span> res.<span class="k">status</span>(<span class="s">400</span>);
+<span class="c">// el id sale de la sesión, no del body (evita IDOR)</span>
+<span class="k">await</span> repo.<span class="k">update</span>({ id: req.session.userId }, r.data);</pre>
+        </div>
+        <div class="stack">
+          <div class="app" style="align-self:start">
+            <div class="app-nav"><div class="app-brand"><span class="ic">🎓</span><b>Mi Perfil</b></div><span class="app-toggle s"><span class="d"></span>API v2.0</span></div>
+            <div class="app-toolbar"><span class="app-input attack" style="font-size:11px">{"department":"Robótica","role":"admin"}</span><span class="app-btn">Guardar</span></div>
+            <div class="app-toast err">HTTP 400 — Bad Request</div>
+          </div>
+          <p class="caption"><b>Bloqueado antes de tocar la base de datos.</b></p>
+          <ul class="clean safe" style="font-size:15px">
+            <li><code>z.string()</code> exige texto: no admite objetos.</li>
+            <li><code>.strict()</code> prohíbe claves de más (como <code>role</code>).</li>
+            <li>El <code>id</code> sale de la sesión: no puedes editar a otro usuario.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- CIERRE -->
+    <section class="slide closing">
+      <p class="eyebrow">Seguridad en Aplicaciones y Bases de Datos · SABD</p>
+      <h2>Gracias</h2>
+      <p class="q">El ORM protege el camino fácil; validar la entrada es trabajo del desarrollador.</p>
+      <p class="authors">Andrea Sarmiento Paredes · Iñaki Vidal Alonso</p>
+    </section>
+
+  </div>
+</div>
+
+<div id="nav-zones"><div class="z left" id="z-prev"></div><div class="z" id="z-next"></div></div>
+<div id="dots" class="control"></div>
+<div class="hint-key">← → espacio · F pantalla completa</div>
+<div id="hud" class="control">
+  <button id="btn-prev" title="Anterior (←)">◀</button>
+  <span id="counter">1 / 11</span>
+  <button id="btn-next" title="Siguiente (→)">▶</button>
+  <button id="btn-full" title="Pantalla completa (F)">⛶</button>
+</div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const total = slides.length;
+  let i = 0;
+  const stage = document.getElementById('stage');
+  const counter = document.getElementById('counter');
+  const progress = document.getElementById('progress');
+  const dotsWrap = document.getElementById('dots');
+
+  slides.forEach((_, n) => {
+    const b = document.createElement('button');
+    b.className = 'dot' + (n === 0 ? ' on' : '');
+    b.setAttribute('aria-label', 'Ir a la diapositiva ' + (n + 1));
+    b.addEventListener('click', () => go(n));
+    dotsWrap.appendChild(b);
+  });
+  const dots = Array.from(dotsWrap.children);
+
+  function go(n) {
+    i = Math.max(0, Math.min(total - 1, n));
+    slides.forEach((s, k) => s.classList.toggle('active', k === i));
+    dots.forEach((d, k) => d.classList.toggle('on', k === i));
+    counter.textContent = (i + 1) + ' / ' + total;
+    progress.style.width = (i / (total - 1) * 100) + '%';
+    if (location.hash !== '#s' + (i + 1)) history.replaceState(null, '', '#s' + (i + 1));
+  }
+  const next = () => go(i + 1);
+  const prev = () => go(i - 1);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); next(); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); prev(); }
+    else if (e.key === 'Home') go(0);
+    else if (e.key === 'End') go(total - 1);
+    else if (e.key.toLowerCase() === 'f') toggleFull();
+  });
+  document.getElementById('z-next').addEventListener('click', next);
+  document.getElementById('z-prev').addEventListener('click', prev);
+  document.getElementById('btn-next').addEventListener('click', (e) => { e.stopPropagation(); next(); });
+  document.getElementById('btn-prev').addEventListener('click', (e) => { e.stopPropagation(); prev(); });
+  document.getElementById('btn-full').addEventListener('click', (e) => { e.stopPropagation(); toggleFull(); });
+
+  function toggleFull() {
+    try { if (!document.fullscreenElement) document.documentElement.requestFullscreen(); else document.exitFullscreen(); } catch (_) {}
+  }
+  function resize() {
+    const pad = 36;
+    const scale = Math.min((window.innerWidth - pad) / 1280, (window.innerHeight - pad) / 720);
+    stage.style.transform = 'scale(' + scale + ')';
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const m = location.hash.match(/^#s(\d+)$/);
+  go(m ? parseInt(m[1], 10) - 1 : 0);
+</script>
+</body>
+</html>

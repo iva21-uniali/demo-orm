@@ -1,172 +1,153 @@
-# Demo Universitaria: CVE-2025-60542 y CVE-2026-76848 en TypeORM
+# El mito de que los ORMs impiden la Inyección SQL — Demo (TypeORM)
 
-Proyecto educativo en local (`Node.js + Express + TypeScript + TypeORM + SQLite :memory:`) que reproduce en vivo las dos vulnerabilidades reales de TypeORM:
+> **Tesis:** usar un ORM (TypeORM) **no** te hace inmune a la inyección SQL. El ORM
+> parametriza los *valores* normales, pero se rompe cuando la entrada del usuario
+> entra por un hueco que no se puede parametrizar o con una *forma* inesperada. La
+> defensa real es **validar la entrada** (lista blanca + tipos) antes del ORM.
 
-1. **CVE-2026-76848**: Fallo de sanitización en `distinctOn` dentro de `SelectQueryBuilder`.
-2. **CVE-2025-60542**: Inyección SQL mediante objetos JSON anidados pasados a `repository.save()`.
+Proyecto educativo en local (`Node.js + Express + TypeScript + TypeORM + SQLite en memoria`)
+que reproduce en vivo dos vulnerabilidades reales de TypeORM:
+
+| CVE | Dónde | Efecto en la demo |
+|-----|-------|-------------------|
+| **CVE-2026-76848** | `SelectQueryBuilder.distinctOn()` | Revela una cuenta de administrador oculta |
+| **CVE-2025-60542** | objeto JSON anidado en `repository.save()` | Escala a `alice` de `estudiante` a `admin` |
+
+Además se muestran dos fallos de diseño asociados como **defensa en profundidad**:
+*mass assignment* (volcar `req.body` entero) e **IDOR** (confiar en el `id` del cuerpo).
 
 ---
 
-## 1. Arranque rápido (con Docker o con Node local)
+## 1. Arranque
 
-### Opción A: Con Docker (recomendado para no depender de versiones de Node)
-
-```bash
-docker compose up --build
-```
-*(Para apagarlo y reiniciar la base de datos en memoria: `Ctrl + C` y `docker compose down`).*
-
-### Opción B: Con Node.js en local
-
+### Opción A — Node.js local
 ```bash
 npm install
 npm start
 ```
 
-- Abre **http://localhost:3000** a la izquierda de la pantalla.
-- Deja la **terminal** a la derecha para ver las consultas SQL que construye TypeORM (`logging: true`).
+### Opción B — Docker
+```bash
+docker compose up --build
+```
+*(Para reiniciar la base en memoria: `Ctrl + C` y volver a arrancar.)*
+
+- Interfaz web: **http://localhost:3000** (ponla a la izquierda).
+- Terminal a la derecha: con `logging: true`, TypeORM imprime **cada SQL** que ejecuta.
+  Ese log es la prueba visual de las inyecciones.
+
+El botón arriba a la derecha alterna la API:
+- **🟠 API v1.0** = endpoints vulnerables (`/api/vulnerable/...`).
+- **🟢 API v2.0** = endpoints protegidos con Zod + lista blanca (`/api/seguro/...`).
 
 ---
 
-## 2. Guion de pruebas en vivo (en `http://localhost:3000`)
+## 2. Honestidad del montaje (léelo antes de la defensa)
 
-Arriba a la derecha, junto al perfil de `Alicia Gómez`, está el botoncillo discreto de versión:
-- **`🟠 API v1.0`** = Modo Vulnerable (por defecto al abrir la web).
-- **`🟢 API v2.0`** = Modo Protegido (Zod + Allowlist).
+Los dos CVE son **reales y publicados**, pero cada uno solo se dispara de forma
+**nativa** sobre un motor concreto:
 
-### Prueba A — CVE-2026-76848 (`qb.distinctOn()` en `QueryBuilder`)
+- **CVE-2026-76848** → nativo solo en **PostgreSQL**.
+- **CVE-2025-60542** → nativo solo en **MySQL/mysql2** con **TypeORM < 0.3.26**.
 
-En `node_modules/typeorm/query-builder/SelectQueryBuilder.js` (líneas 1118–1121), el método oficial `qb.distinctOn([...])` interpola los elementos del array directamente dentro de `SELECT DISTINCT (...)` sin escaparlos ni validarlos contra una lista blanca.
+Esta demo usa **SQLite en memoria** para arrancar sin servidores externos. Por eso,
+para verlos aquí, hay que *traer* el comportamiento vulnerable a SQLite. Toda esa
+"fontanería" está aislada y documentada en **[`src/db/reproduction.ts`](src/db/reproduction.ts)**:
 
-- **Dónde escribir**: en el buscador de la derecha, encima de la tabla (*"Agrupar vista por campo..."*).
+- **CVE-2026-76848:** se sobreescribe `createSelectDistinctExpression` para que emita
+  la interpolación insegura también en SQLite. La lógica (`replacePropertyNames` **sin
+  lista blanca**) es **idéntica** a la de TypeORM; lo único que se quita es el candado
+  `if (isPostgresFamily)` que la limita a Postgres.
+- **CVE-2025-60542:** se usa la **librería real `sqlstring`** (la que causa el CVE) con
+  `stringifyObjects: false` para expandir el objeto anidado en columnas, y se ejecuta
+  sobre SQLite (que acepta identificadores con *backticks*). El driver nativo de SQLite
+  no pasa por `sqlstring`, por eso hay que invocarla explícitamente.
 
-1. **Uso normal (`🟠 API v1.0`)**:
-   - Escribe: `department` y pulsa **Filtrar vista**.
-   - En la terminal verás: `SELECT DISTINCT ("user"."department"), "user"."id" ... WHERE "user"."visibleEnDirectorio" = 1`.
-2. **Explotación del CVE-2026-76848 (`🟠 API v1.0`)**:
-   - En ese mismo buscador, escribe:
-     `1), * FROM user WHERE role='admin' --`
-   - Pulsa **Filtrar vista**.
-   - **Qué ocurre**: TypeORM incrusta ese texto dentro de `SELECT DISTINCT (1), * FROM user WHERE role='admin' --...)`, comentando el resto de la consulta original y devolviendo en la tabla la cuenta oculta **`@admin_rectorado`** (`visibleEnDirectorio = 0`).
-3. **Remediación (`🟢 API v2.0`)**:
-   - Haz clic en el botoncillo **`API v1.0`** de arriba a la derecha para cambiarlo a **`🟢 API v2.0`**, escribe lo mismo y pulsa **Filtrar vista**.
-   - **Qué ocurre**: Zod y `DISTINCT_ALLOWLIST` bloquean cualquier valor fuera de la lista blanca (`id`, `username`, `department`) devolviendo **HTTP 400 Bad Request** sin ejecutar ninguna consulta SQL.
+**Frase para el tribunal:** *"La lógica vulnerable es la de la librería real; lo único
+artificial es ejecutarla sobre SQLite en vez del motor donde el bug está activo por
+defecto."*
 
----
-
-### Prueba B — CVE-2025-60542 (Objetos JSON anidados en `repository.save()`)
-
-En TypeORM (< 0.3.26), cuando el desarrollador pasa `req.body` directamente a `await userRepository.save(req.body)` sin validar que las propiedades sean tipos primitivos (`string`), enviar un **objeto JSON anidado** dentro de una propiedad provoca que el formateador de consultas descomponga las claves del objeto como asignaciones `columna = valor` dentro del `UPDATE`.
-
-- **Dónde escribir**: en la columna izquierda (*"Mi Perfil Académico"*), en el campo **Departamento / Especialidad**.
-
-1. **Uso normal (`🟠 API v1.0`)**:
-   - Escribe un texto normal: `Robótica` y pulsa **Guardar cambios**.
-   - **Qué ocurre**: El departamento de `@alice` pasa a ser `Robótica` y su rol sigue siendo `estudiante`.
-2. **Explotación del CVE-2025-60542 (`🟠 API v1.0`)**:
-   - En esa misma caja **Departamento / Especialidad**, escribe este **objeto JSON anidado**:
-     `{"department":"Robótica","role":"admin"}`
-   - Pulsa **Guardar cambios**.
-   - **Qué ocurre**: El objeto JSON anidado se expande en la sentencia `UPDATE "user" SET "department" = 'Robótica', "role" = 'admin' WHERE "id" = 1` y en la tabla de la derecha verás que **Alicia (`@alice`) se ha convertido en `admin`** (fila resaltada en rojo).
-3. **Remediación (`🟢 API v2.0`)**:
-   - Cambia el botoncillo superior derecho a **`🟢 API v2.0`** y vuelve a pulsar **Guardar cambios** con ese mismo objeto JSON anidado.
-   - **Qué ocurre**: El esquema `GuardarPerfilDTO` de Zod exige `department: z.string()`. Al detectar un objeto JSON anidado en vez de un string, rechaza la petición con **HTTP 400 Bad Request (`Se esperaba un string, pero se recibió un objeto JSON anidado`)** antes de llegar a `repository.save()`.
+> Nota de versión: en producción, el CVE-2025-60542 se corrige **actualizando a TypeORM
+> ≥ 0.3.26**; el CVE-2026-76848 afecta hasta la 1.1.0. La defensa por validación de
+> entrada protege en cualquier versión.
 
 ---
 
-## 3. Explicación sencilla: ¿Por qué funcionan estas dos inyecciones por debajo?
+## 3. Estructura del código
 
-### A) ¿Por qué funciona la de `distinctOn` (`CVE-2026-76848`)?
-
-1. **La limitación del estándar SQL**:
-   En SQL, los **valores** (como el nombre `'alice'`) se pueden enviar como parámetros separados con `?`, pero los **nombres de columnas** (como `department` o `id`) **no admiten `?`** en SQL.
-2. **El error interno de TypeORM**:
-   Cuando el programador llama a `qb.distinctOn([entrada])`, TypeORM asume que ese dato lo ha escrito el propio programador y lo pega tal cual dentro del paréntesis del `SELECT DISTINCT (...)`:
-   ```sql
-   SELECT DISTINCT ( <LO_QUE_ESCRIBAS_AQUÍ> ), "user"."id", "user"."username"...
-   FROM "user" WHERE "user"."visibleEnDirectorio" = 1
-   ```
-3. **Qué hace pieza por pieza lo que escribimos (`1), * FROM user WHERE role='admin' --`)**:
-   - **`1)`**: Cierra el paréntesis que TypeORM había dejado abierto en `SELECT DISTINCT (`.
-   - **`, * FROM user WHERE role='admin'`**: Añade el resto de una consulta nueva pidiendo todas las columnas (`*`) de la tabla `user` donde el rol sea `'admin'`.
-   - **`--`**: Es el símbolo de comentario en SQL. Hace que el motor de base de datos **ignore todo lo que venía después** en la consulta original de TypeORM (incluyendo el filtro `WHERE "user"."visibleEnDirectorio" = 1` que mantenía oculta la cuenta del administrador).
-   - **Consulta resultante que ejecuta la base de datos**:
-     ```sql
-     SELECT DISTINCT (1), * FROM user WHERE role='admin' -- ), "user"."id"... WHERE "user"."visibleEnDirectorio" = 1
-     ```
-     Como todo lo que va detrás de `--` queda desactivado, la base de datos devuelve directamente al administrador oculto (`@admin_rectorado`).
-
----
-
-### B) ¿Por qué funciona la del objeto JSON anidado en `save()` (`CVE-2025-60542`)?
-
-1. **Qué espera el programador**:
-   El formulario de "Mi Perfil" sirve solo para cambiar el departamento de Alicia (`ID #1`). Si escribes un texto normal como `Robótica`, TypeORM ejecuta:
-   ```sql
-   UPDATE "user" SET "department" = 'Robótica' WHERE "id" = 1
-   ```
-2. **El error interno de TypeORM (< 0.3.26)**:
-   Si no se valida la entrada con **Zod**, el usuario puede enviar un **objeto JSON anidado** en lugar de un texto simple. En versiones de TypeORM anteriores a la `0.3.26`, el formateador de consultas SQL tenía la opción `stringifyObjects: false` por defecto: cuando recibía un objeto `{ clave1: valor1, clave2: valor2 }`, en vez de convertirlo a texto, **descomponía cada propiedad del objeto como una asignación SQL `columna = valor` separada por comas**.
-3. **Qué hace pieza por pieza lo que escribimos (`{"department":"Robótica","role":"admin"}`)**:
-   - En lugar de actualizar solo la columna `"department"`, el objeto JSON anidado inyecta una segunda columna (`"role" = 'admin'`) dentro de la misma sentencia `UPDATE`:
-     ```sql
-     UPDATE "user" SET "department" = 'Robótica', "role" = 'admin' WHERE "id" = 1
-     ```
-   - La base de datos ejecuta ese `UPDATE` y cambia el rol de Alicia (`#1`) de `estudiante` a `admin`.
-4. **Por qué Zod lo frena en seco en `API v2.0`**:
-   Porque en el esquema `GuardarPerfilDTO` hemos puesto `department: z.string()`. En cuanto Zod ve que llega un objeto `{...}` en lugar de un `string`, devuelve `400 Bad Request` y nunca llega a llamar a `repository.save()`.
-
----
-
-## 4. Bloques de código reales para las diapositivas
-
-### Vector 1: CVE-2026-76848 (`distinctOn` en `QueryBuilder`)
-
-```typescript
-// ❌ VULNERABLE: TypeORM interpola el argumento de distinctOn() sin sanitizar
-const qb = AppDataSource.getRepository(User)
-  .createQueryBuilder("user")
-  .where("user.visibleEnDirectorio = 1");
-
-if (req.body.distinctOn) {
-  qb.distinctOn([req.body.distinctOn]); // <-- CVE-2026-76848
-}
-const users = await qb.getMany();
+```
+src/
+├─ index.ts                 Arranque: habilita reproducción, inicializa DB, levanta server
+├─ app.ts                   Construye Express y monta las rutas
+├─ entities/User.ts         Entidad User -> tabla "user"
+├─ db/
+│  ├─ data-source.ts        Conexión SQLite en memoria (logging activado)
+│  ├─ seed.ts               Datos de prueba (incluye la cuenta admin oculta)
+│  └─ reproduction.ts       ⭐ Reproducción didáctica de los dos CVE (ver sección 2)
+├─ validation/schemas.ts    DTOs de Zod + lista blanca (la defensa)
+├─ security/session.ts      Sesión simulada (defensa IDOR)
+└─ routes/
+   ├─ vulnerable.ts         API v1.0 — endpoints sin validar
+   └─ secure.ts             API v2.0 — endpoints con Zod + lista blanca + sesión
+public/                     Interfaz web (index.html, styles.css, app.js)
 ```
 
-```typescript
-// ✅ PROTEGIDO: Validación con Zod + Allowlist estricta de columnas
-const DISTINCT_ALLOWLIST = {
-  id: "user.id",
-  username: "user.username",
-  department: "user.department",
-} as const;
+---
 
-const BuscarDistinctDTO = z.object({
-  distinctOn: z.enum(["", "id", "username", "department"]).default(""),
-}).strict();
+## 4. Guion de pruebas en vivo
+
+### Vector A — CVE-2026-76848 (`distinctOn`)
+Buscador de la derecha (*"Agrupar vista por campo..."*):
+
+1. **Normal (🟠):** escribe `department` → agrupa por departamento, SQL:
+   `SELECT DISTINCT (department), ...`
+2. **Ataque (🟠):** escribe `1), * FROM user WHERE role='admin' --` → aparece la cuenta
+   oculta **`@admin_rectorado`**. El `1)` cierra el paréntesis, inyecta una consulta nueva
+   y `--` comenta el filtro `visibleEnDirectorio = 1`.
+3. **Remediado (🟢):** el mismo payload → **HTTP 400** (lista blanca: `id`, `username`, `department`).
+
+### Vector B — CVE-2025-60542 (objeto anidado en `save()`)
+Campo *"Departamento / Especialidad"* de *"Mi Perfil"*:
+
+1. **Normal (🟠):** escribe `Robótica` → `UPDATE "user" SET "department" = ? ...`, `alice`
+   sigue siendo `estudiante`.
+2. **Ataque (🟠):** escribe `{"department":"Robótica","role":"admin"}` → `sqlstring`
+   expande el objeto a `` SET `department` = 'Robotica', `role` = 'admin' `` y **`alice`
+   pasa a `admin`** (fila roja).
+3. **Remediado (🟢):** el mismo payload → **HTTP 400** (`department` debe ser `string`).
+
+### Defensa en profundidad (demostrable por `curl`)
+```bash
+# Mass assignment (vulnerable): sin objeto anidado, bob escala a admin
+curl -X POST localhost:3000/api/vulnerable/perfil \
+  -H 'Content-Type: application/json' -d '{"id":2,"role":"admin"}'
+
+# En el endpoint seguro: .strict() rechaza claves extra (role) y el id del cuerpo (IDOR)
+curl -X POST localhost:3000/api/seguro/perfil \
+  -H 'Content-Type: application/json' -d '{"id":2,"role":"admin","department":"x"}'
+# -> 400: Unrecognized key(s) in object: 'id', 'role'
 ```
+El endpoint seguro **no acepta `id`**: el usuario a modificar se toma de la **sesión
+autenticada** (`src/security/session.ts`), nunca del cuerpo de la petición.
 
-### Vector 2: CVE-2025-60542 (Objetos JSON anidados en `save()`)
+---
 
-```typescript
-// ❌ VULNERABLE: Pasar req.body directamente a save() sin validar tipos escalares
-app.post("/api/inseguro/guardar", async (req, res) => {
-  const repo = AppDataSource.getRepository(User);
-  await repo.save(req.body); // <-- CVE-2025-60542 si contiene objetos JSON anidados
-});
-```
+## 5. Las tres capas de la defensa (API v2.0)
 
-```typescript
-// ✅ PROTEGIDO: DTO con Zod que exige tipos primitivos (z.string()) y .strict()
-const GuardarPerfilDTO = z.object({
-  id: z.number().int().positive(),
-  department: z.string().trim().min(2).max(60), // Rechaza objetos JSON anidados
-}).strict();
+| Amenaza | Defensa | Dónde |
+|---------|---------|-------|
+| CVE-2026-76848 (distinctOn) | `z.enum([...])` + lista blanca de columnas | [`validation/schemas.ts`](src/validation/schemas.ts) |
+| CVE-2025-60542 (objeto anidado) | `department: z.string()` rechaza objetos | [`validation/schemas.ts`](src/validation/schemas.ts) |
+| Mass assignment | `.strict()` + `update()` con columnas explícitas | [`routes/secure.ts`](src/routes/secure.ts) |
+| IDOR | `id` tomado de la sesión, no del `req.body` | [`security/session.ts`](src/security/session.ts) |
 
-app.post("/api/seguro/guardar", async (req, res) => {
-  const parsed = GuardarPerfilDTO.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: "400 Bad Request" });
-  await AppDataSource.getRepository(User).save(parsed.data);
-});
+**Conclusión:** el ORM protege el camino feliz, pero la validación de entrada y el control
+de autorización son responsabilidad del desarrollador. Un ORM no es un sustituto de la
+validación.
+
+---
+
+## 6. Comprobación de tipos
+```bash
+npm run typecheck   # tsc --noEmit, debe salir sin errores
 ```

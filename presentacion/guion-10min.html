@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Guion de la presentación (máx. 10 min)</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+    color: #1e293b; font-size: 11pt; line-height: 1.5; margin: 0;
+  }
+  h1 { font-size: 20pt; color: #1e3a8a; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sub { color: #64748b; font-size: 10pt; margin: 0 0 2px; }
+  .meta {
+    background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px;
+    padding: 10px 14px; margin: 14px 0 18px; font-size: 10pt;
+  }
+  .meta p { margin: 3px 0; }
+  .meta strong { color: #0f172a; }
+  .ponente {
+    font-size: 13pt; font-weight: 700; color: #2563eb; text-transform: uppercase;
+    letter-spacing: 0.08em; margin: 22px 0 8px; padding-bottom: 4px;
+    border-bottom: 2px solid #2563eb;
+  }
+  .ponente.inaki { color: #0d9488; border-color: #0d9488; }
+  .slide { margin: 0 0 13px; padding-left: 14px; border-left: 3px solid #cbd5e1; page-break-inside: avoid; }
+  .slide h3 { font-size: 11.5pt; margin: 0 0 4px; color: #0f172a; }
+  .slide .t { color: #ef4444; font-weight: 700; font-size: 9.5pt; }
+  .inaki .slide .t { color: #ef4444; }
+  .slide p { margin: 0; color: #334155; }
+  code {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 9pt;
+    background: #0f172a; color: #e2e8f0; border-radius: 4px; padding: 1px 5px;
+  }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 16px; font-size: 9.5pt; page-break-inside: avoid; }
+  th, td { text-align: left; padding: 5px 9px; border-bottom: 1px solid #e2e8f0; }
+  th { background: #1e3a8a; color: #fff; font-weight: 600; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  .total td { font-weight: 700; background: #eef2ff !important; color: #1e3a8a; }
+  .qa { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px 16px; page-break-inside: avoid; }
+  .qa h2 { font-size: 12pt; color: #92400e; margin: 0 0 8px; }
+  .qa li { margin: 5px 0; }
+  .qa b { color: #0f172a; }
+  h2.sec { font-size: 13pt; color: #1e3a8a; margin: 24px 0 8px; }
+  .tip { font-size: 9.5pt; color: #475569; font-style: italic; margin: 6px 0 14px; }
+  .act { color: #7c3aed; font-size: 9pt; font-style: italic; }
+</style>
+</head>
+<body>
+
+<h1>Guion de la presentación</h1>
+<p class="sub">El mito de que los ORMs impiden la inyección SQL · máx. 10 minutos</p>
+
+<div class="meta">
+  <p><strong>Ponentes:</strong> Andrea Sarmiento Paredes · Iñaki Vidal Alonso</p>
+  <p><strong>Reparto:</strong> Andrea → diapositivas 1-6 · Iñaki → diapositivas 7-11. Un solo relevo (tras la diapositiva 6). Cada ponente hace una demo.</p>
+  <p><strong>Duración objetivo:</strong> 9:35. Hablad despacio; la demo come tiempo.</p>
+</div>
+
+<p class="tip">Consejo: no leáis esto palabra por palabra. Son las ideas que hay que decir en cada diapositiva. Avanzáis con la flecha derecha; pantalla completa con la tecla <strong>F</strong>.</p>
+
+<div class="ponente">Andrea</div>
+
+<div class="slide">
+  <h3>1 · Portada <span class="t">— 25 s</span></h3>
+  <p>«Buenas. Somos Andrea e Iñaki y os traemos <em>El mito de que los ORMs impiden la inyección SQL</em>. Vamos a explotar en vivo dos vulnerabilidades reales de TypeORM y luego las arreglamos. La idea que queremos que os llevéis: usar un ORM <strong>no</strong> os hace inmunes a la inyección SQL.»</p>
+</div>
+
+<div class="slide">
+  <h3>2 · ¿Qué es una inyección SQL? <span class="t">— 55 s</span></h3>
+  <p>«Primero lo básico. La app guarda sus datos en una base de datos y le habla con consultas SQL. Esa consulta mezcla dos cosas: las <strong>órdenes</strong> que escribe el programador y los <strong>datos</strong> que escribe el usuario. Hay inyección cuando el dato del usuario se cuela y se ejecuta como si fuera una orden. Ejemplo: un buscador por nombre. Si escribo <em>alice</em>, busca a alice. Pero si escribo <code>' OR '1'='1</code>, el filtro se rompe y devuelve a todos los usuarios. La defensa de siempre es <strong>parametrizar</strong>: mandar el valor por un carril aparte con una <code>?</code>, para que nunca se interprete como código. Funciona para valores… pero no siempre se puede, y ahí nacen los fallos de hoy.»</p>
+</div>
+
+<div class="slide">
+  <h3>3 · ¿Qué es un ORM y por qué confiamos en él? <span class="t">— 55 s</span></h3>
+  <p>«Un ORM —Object-Relational Mapping— es una librería que traduce los objetos de tu código a SQL, para no escribir las consultas a mano. TypeORM es uno de ellos. Y además parametriza solo las consultas simples, así que la gente piensa «con un ORM ya estoy a salvo» y relaja los controles. Pero el mito se rompe en tres casos: cuando la entrada va a un sitio que <strong>no admite</strong> la <code>?</code> —el nombre de una columna—; cuando el dato llega con una <strong>forma inesperada</strong> —un objeto donde esperaba texto—; o cuando hay un <strong>bug del propio ORM</strong>. Los dos CVE de hoy son exactamente eso.»</p>
+</div>
+
+<div class="slide">
+  <h3>4 · El laboratorio <span class="t">— 45 s</span></h3>
+  <p>«Para demostrarlo montamos esta app: <em>Campus Digital</em>, una intranet universitaria. A la izquierda editas tu perfil; a la derecha ves el directorio de miembros. Arranca con <code>npm install</code> y <code>npm start</code>, y en la terminal se ve cada consulta SQL en tiempo real. Dos objetivos: revelar una cuenta de administrador que está <strong>oculta</strong> en el directorio, y conseguir que la estudiante <em>alice</em> se convierta en admin. Cada ataque lo veréis en tres pasos: uso normal, explotación, y la defensa.»</p>
+</div>
+
+<div class="slide">
+  <h3>5 · Vector 1 · CVE-2026-76848 <span class="t">— 60 s</span></h3>
+  <p>«Primer fallo, en el método <code>distinctOn</code>, que sirve para agrupar resultados por una columna y no repetir filas. El problema: el nombre de una columna no se puede parametrizar con <code>?</code>, así que TypeORM lo pega <strong>como texto</strong> dentro de la consulta. Y aquí se lo pasamos directamente sin validar. Entonces, en vez de un nombre de columna, el atacante escribe esto: <code>1), * FROM user WHERE role='admin' --</code>. Pieza a pieza: el <code>1)</code> cierra el paréntesis que TypeORM dejó abierto; luego añade su propia consulta pidiendo los administradores; y el <code>--</code> comenta, es decir, <strong>anula</strong> el filtro que mantenía oculta la cuenta. En el TypeORM real esto ocurre en PostgreSQL.»</p>
+</div>
+
+<div class="slide">
+  <h3>6 · Vector 1 · demo en vivo <span class="t">— 70 s</span></h3>
+  <p class="act">(Acción: enseñar la diapositiva; opcional cambiar al navegador y la terminal.)</p>
+  <p>«Lo ejecutamos. Con un valor normal como <em>department</em> saldrían los tres usuarios visibles. Pero metemos el payload en el buscador, pulsamos Filtrar… y aparece <code>@admin_rectorado</code>, la cuenta de administrador que estaba oculta. Si miráis la terminal, el SQL que generó TypeORM lleva incrustado nuestro texto: ha roto la consulta y ha anulado el filtro <code>visibleEnDirectorio = 1</code>. Hemos leído datos a los que no deberíamos tener acceso, sin concatenar SQL a mano en ningún momento. Con esto os dejo con Iñaki, que os enseña cómo se arregla.»</p>
+</div>
+
+<div class="ponente inaki">Iñaki</div>
+<div class="inaki">
+
+<div class="slide">
+  <h3>7 · Vector 1 · solución <span class="t">— 55 s</span></h3>
+  <p>«Gracias. La solución es <strong>validar la entrada antes</strong> de que llegue a TypeORM, con Zod. Como un nombre de columna no se puede parametrizar, usamos una <strong>lista blanca</strong>: solo aceptamos <code>id</code>, <code>username</code> o <code>department</code>; cualquier otra cosa se rechaza. Fijaos en el antes y el después: antes pasábamos el texto tal cual; ahora el <code>safeParse</code> de Zod corta con un 400 si el valor no está en la lista, y solo la columna ya validada llega a <code>distinctOn</code>. El mismo ataque de antes ahora devuelve <em>400 Bad Request</em> y no se ejecuta ninguna consulta.»</p>
+</div>
+
+<div class="slide">
+  <h3>8 · Vector 2 · CVE-2025-60542 <span class="t">— 60 s</span></h3>
+  <p>«Segundo fallo, en <code>save</code>, que guarda en la base de datos los campos del objeto que recibe. El formulario <em>Mi perfil</em> solo debería cambiar tu departamento, que es un texto. Pero si en vez de un texto mandamos un <strong>objeto</strong> con una clave de más —<code>{"department":"Robótica","role":"admin"}</code>—, TypeORM lo convierte en <strong>dos cambios</strong> a la vez. Esperaba un texto para <code>department</code>, recibe un objeto con una segunda clave <code>role</code>, y acaba escribiendo también <code>role = 'admin'</code>, que no debía tocar. Esto afecta a TypeORM anterior a la 0.3.26 con MySQL.»</p>
+</div>
+
+<div class="slide">
+  <h3>9 · Vector 2 · demo en vivo <span class="t">— 70 s</span></h3>
+  <p class="act">(Acción: enseñar la diapositiva; opcional cambiar al navegador y la terminal.)</p>
+  <p>«Lo probamos. Con un texto normal, <em>Robótica</em>, solo cambiaría el departamento y alice seguiría siendo estudiante. Pero enviamos el objeto desde <em>Mi perfil</em>, pulsamos Guardar… y en el directorio alice aparece ya como <strong>admin</strong>. En la terminal se ve el UPDATE: en vez de tocar solo el departamento, se ha colado <code>role = 'admin'</code>. Una estudiante se acaba de dar permisos de administradora rellenando el campo del departamento.»</p>
+</div>
+
+<div class="slide">
+  <h3>10 · Vector 2 · solución <span class="t">— 55 s</span></h3>
+  <p>«Y se arregla igual, validando el tipo con Zod. Exigimos que <code>department</code> sea un <strong>texto</strong>: si llega un objeto, se rechaza. Añadimos <code>.strict()</code>, que prohíbe cualquier clave de más como <code>role</code>. Y además, el <code>id</code> del usuario a modificar lo tomamos de la <strong>sesión</strong>, no de lo que manda el cliente, para que nadie pueda editar a otro usuario. El mismo objeto malicioso de antes ahora devuelve 400, bloqueado antes de tocar la base de datos.»</p>
+</div>
+
+<div class="slide">
+  <h3>11 · Cierre <span class="t">— 25 s</span></h3>
+  <p>«Para terminar: incluso sin concatenar SQL a mano, un ORM puede ser vulnerable. El ORM protege el camino fácil, pero validar la entrada es trabajo del desarrollador. Muchas gracias, ¿tenéis alguna pregunta?»</p>
+</div>
+
+</div>
+
+<h2 class="sec">Resumen de tiempos</h2>
+<table>
+  <tr><th>#</th><th>Diapositiva</th><th>Ponente</th><th>Tiempo</th></tr>
+  <tr><td>1</td><td>Portada</td><td>Andrea</td><td>0:25</td></tr>
+  <tr><td>2</td><td>¿Qué es una inyección SQL?</td><td>Andrea</td><td>0:55</td></tr>
+  <tr><td>3</td><td>¿Qué es un ORM y el mito?</td><td>Andrea</td><td>0:55</td></tr>
+  <tr><td>4</td><td>El laboratorio</td><td>Andrea</td><td>0:45</td></tr>
+  <tr><td>5</td><td>Vector 1 · CVE-2026-76848</td><td>Andrea</td><td>1:00</td></tr>
+  <tr><td>6</td><td>Vector 1 · demo</td><td>Andrea</td><td>1:10</td></tr>
+  <tr><td>7</td><td>Vector 1 · solución</td><td>Iñaki</td><td>0:55</td></tr>
+  <tr><td>8</td><td>Vector 2 · CVE-2025-60542</td><td>Iñaki</td><td>1:00</td></tr>
+  <tr><td>9</td><td>Vector 2 · demo</td><td>Iñaki</td><td>1:10</td></tr>
+  <tr><td>10</td><td>Vector 2 · solución</td><td>Iñaki</td><td>0:55</td></tr>
+  <tr><td>11</td><td>Cierre</td><td>Iñaki</td><td>0:25</td></tr>
+  <tr class="total"><td></td><td>Total</td><td></td><td>9:35</td></tr>
+</table>
+
+<div class="qa">
+  <h2>Si os preguntan (preparad estas respuestas)</h2>
+  <ul>
+    <li><b>«¿Por qué no basta el ORM?»</b> → Parametriza valores, pero no puede parametrizar nombres de columna ni controlar la forma del dato; ahí entra la inyección.</li>
+    <li><b>«¿Esto pasa de verdad?»</b> → Sí, son dos CVE publicados (2026-76848 y 2025-60542). El primero es nativo de PostgreSQL; el segundo de MySQL con TypeORM &lt; 0.3.26.</li>
+    <li><b>«¿La solución definitiva?»</b> → Validar toda entrada en la frontera: lista blanca para identificadores, tipos estrictos para valores, y atar las operaciones al usuario autenticado.</li>
+  </ul>
+</div>
+
+</body>
+</html>
